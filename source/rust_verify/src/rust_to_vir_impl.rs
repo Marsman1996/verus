@@ -728,9 +728,20 @@ pub(crate) fn collect_external_trait_impls<'tcx>(
                         if !trait_map[&trait_path].iter().any(|t| t.x.assoc_typs.contains(&name)) {
                             continue;
                         }
+                        // Normalize the associated type's value before filtering.
+                        // `<X as IntoIterator>::IntoIter` (a projection) would otherwise pass
+                        // `mid_ty_filter_for_external_impls` (which accepts projections), only for
+                        // `translate_assoc_type` to resolve it to an undeclared concrete type (or a
+                        // higher-ranked predicate) and error/ICE. Normalizing lets the filter see the
+                        // resolved type, so impls whose associated types reduce to unsupported
+                        // (undeclared) types are skipped here instead of failing compilation.
+                        let assoc_ty = tcx.normalize_erasing_regions(
+                            rustc_middle::ty::TypingEnv::post_analysis(tcx, impl_def_id),
+                            tcx.type_of(assoc_item.def_id).instantiate_identity(),
+                        );
                         if !crate::rust_to_vir_base::mid_ty_filter_for_external_impls(
                             ctxt,
-                            &tcx.type_of(assoc_item.def_id).skip_binder(),
+                            &assoc_ty,
                             external_info,
                         ) {
                             continue 'impls;
